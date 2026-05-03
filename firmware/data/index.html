@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 BLE Attendance</title>
+  <style>
+    /* -----------------------------------------------------------------------
+     * Design tokens
+     * --------------------------------------------------------------------- */
+    :root {
+      --bg:        #f0f4f8;
+      --surface:   #ffffff;
+      --border:    #e2e8f0;
+      --accent:    #3182ce;
+      --accent-dk: #2c5282;
+      --green:     #38a169;
+      --red:       #e53e3e;
+      --amber:     #d69e2e;
+      --text:      #2d3748;
+      --muted:     #718096;
+      --radius:    10px;
+      --shadow:    0 1px 4px rgba(0,0,0,.08);
+    }
+
+    /* -----------------------------------------------------------------------
+     * Reset & base
+     * --------------------------------------------------------------------- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui,-apple-system,sans-serif; background: var(--bg);
+           color: var(--text); min-height: 100vh; }
+
+    /* -----------------------------------------------------------------------
+     * Header
+     * --------------------------------------------------------------------- */
+    header {
+      background: var(--accent-dk); color: #fff;
+      padding: .9rem 1.5rem; display: flex; align-items: center; gap: 1rem;
+      position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 6px rgba(0,0,0,.2);
+    }
+    header h1 { font-size: 1.1rem; flex: 1; letter-spacing: .02em; }
+    #session-badge {
+      font-size: .75rem; padding: .2rem .75rem; border-radius: 999px;
+      font-weight: 700; background: var(--red); color: #fff;
+      transition: background .3s;
+    }
+    #session-badge.active { background: var(--green); }
+    #wifi-indicator { font-size: .75rem; opacity: .8; white-space: nowrap; }
+
+    /* -----------------------------------------------------------------------
+     * Navigation tabs
+     * --------------------------------------------------------------------- */
+    nav {
+      display: flex; gap: .5rem; padding: .6rem 1.5rem;
+      background: #ebf4ff; border-bottom: 1px solid #bee3f8;
+      overflow-x: auto;
+    }
+    nav button {
+      padding: .35rem .9rem; border: 1px solid #90cdf4; border-radius: 6px;
+      background: #fff; cursor: pointer; font-size: .85rem; white-space: nowrap;
+      transition: background .15s;
+    }
+    nav button:hover  { background: #bee3f8; }
+    nav button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    /* -----------------------------------------------------------------------
+     * Layout
+     * --------------------------------------------------------------------- */
+    main { padding: 1.25rem 1.5rem; max-width: 1100px; margin: 0 auto; }
+    .section { display: none; }
+    .section.visible { display: block; }
+
+    /* -----------------------------------------------------------------------
+     * Cards
+     * --------------------------------------------------------------------- */
+    .card {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 1.1rem 1.25rem; margin-bottom: 1.1rem;
+    }
+    .card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: .9rem;
+    }
+    .card h2 { font-size: .95rem; color: var(--accent); }
+
+    /* -----------------------------------------------------------------------
+     * Stat grid (dashboard)
+     * --------------------------------------------------------------------- */
+    .stat-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr));
+      gap: .75rem; margin-bottom: 1.1rem;
+    }
+    .stat-card {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 1rem; text-align: center;
+    }
+    .stat-card .stat-val { font-size: 2rem; font-weight: 700; color: var(--accent); }
+    .stat-card .stat-label { font-size: .75rem; color: var(--muted); margin-top: .2rem; }
+
+    /* -----------------------------------------------------------------------
+     * Live scan feed
+     * --------------------------------------------------------------------- */
+    #scan-feed {
+      height: 220px; overflow-y: auto; font-family: monospace; font-size: .78rem;
+      background: #1a202c; color: #68d391; padding: .6rem .8rem;
+      border-radius: 6px; line-height: 1.6;
+    }
+    #scan-feed .entry { border-bottom: 1px solid #2d3748; padding: .15rem 0; }
+    #scan-feed .beacon { color: #63b3ed; }
+    #scan-feed .marked { color: #f6e05e; font-weight: bold; }
+
+    /* -----------------------------------------------------------------------
+     * Tables
+     * --------------------------------------------------------------------- */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    th, td { padding: .55rem .8rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { background: #ebf4ff; font-weight: 600; white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f7fafc; }
+    td code { font-size: .8rem; background: #edf2f7; padding: .1rem .4rem; border-radius: 4px; }
+
+    /* -----------------------------------------------------------------------
+     * Buttons
+     * --------------------------------------------------------------------- */
+    .btn {
+      display: inline-flex; align-items: center; gap: .35rem;
+      padding: .45rem 1.1rem; border: none; border-radius: 6px; cursor: pointer;
+      font-size: .85rem; font-weight: 600; transition: opacity .15s, filter .15s;
+    }
+    .btn:hover   { filter: brightness(1.07); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-green  { background: var(--green);  color: #fff; }
+    .btn-red    { background: var(--red);    color: #fff; }
+    .btn-blue   { background: var(--accent); color: #fff; }
+    .btn-amber  { background: var(--amber);  color: #fff; }
+    .btn-ghost  { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-sm     { padding: .25rem .65rem; font-size: .78rem; }
+
+    /* -----------------------------------------------------------------------
+     * Forms
+     * --------------------------------------------------------------------- */
+    .form-row { display: flex; gap: .65rem; flex-wrap: wrap; margin-bottom: .65rem; }
+    .form-row input, .form-row select {
+      flex: 1; min-width: 140px; padding: .42rem .75rem;
+      border: 1px solid var(--border); border-radius: 6px; font-size: .85rem;
+    }
+    label { display: block; font-size: .8rem; font-weight: 600;
+            color: var(--muted); margin-bottom: .25rem; }
+
+    /* -----------------------------------------------------------------------
+     * Toast / status bar
+     * --------------------------------------------------------------------- */
+    #toast {
+      position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
+      background: #2d3748; color: #fff; padding: .5rem 1.2rem; border-radius: 8px;
+      font-size: .82rem; opacity: 0; transition: opacity .3s; pointer-events: none;
+      z-index: 999;
+    }
+    #toast.show { opacity: 1; }
+    #status-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      padding: .3rem 1rem; font-size: .72rem;
+      background: #2d3748; color: #a0aec0; display: flex; gap: 1rem;
+    }
+    #status-bar span { color: #68d391; }
+
+    /* -----------------------------------------------------------------------
+     * WS connection dot
+     * --------------------------------------------------------------------- */
+    .ws-dot {
+      width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+      background: var(--red); margin-right: .3rem; vertical-align: middle;
+    }
+    .ws-dot.connected { background: var(--green); }
+
+    /* -----------------------------------------------------------------------
+     * Misc
+     * --------------------------------------------------------------------- */
+    .empty-state { text-align: center; color: var(--muted); padding: 2rem 0; font-size: .9rem; }
+    .pill {
+      display: inline-block; padding: .1rem .6rem; border-radius: 999px;
+      font-size: .72rem; font-weight: 700;
+    }
+    .pill-green { background: #c6f6d5; color: #276749; }
+    .pill-blue  { background: #bee3f8; color: #2c5282; }
+    .pill-amber { background: #fefcbf; color: #744210; }
+    .pill-red   { background: #fed7d7; color: #742a2a; }
+  </style>
+</head>
+<body>
+
+<!-- =========================================================================
+     Header
+     ===================================================================== -->
+<header>
+  <h1>📡 ESP32 BLE Attendance System</h1>
+  <span id="wifi-indicator">WiFi: –</span>
+  <div id="session-badge">Session: Inactive</div>
+</header>
+
+<!-- =========================================================================
+     Navigation
+     ===================================================================== -->
+<nav>
+  <button class="active" onclick="showSection('dashboard',this)">Dashboard</button>
+  <button onclick="showSection('attendance',this)">Attendance</button>
+  <button onclick="showSection('students',this)">Students</button>
+  <button onclick="showSection('session',this)">Session</button>
+  <button onclick="showSection('scanlogs',this)">Scan Logs</button>
+</nav>
+
+<main>
+
+<!-- =========================================================================
+     DASHBOARD
+     ===================================================================== -->
+<div id="sec-dashboard" class="section visible">
+
+  <!-- Stats row -->
+  <div class="stat-grid" id="stat-grid">
+    <div class="stat-card"><div class="stat-val" id="stat-students">–</div><div class="stat-label">Students</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-present">–</div><div class="stat-label">Present Now</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-total-att">–</div><div class="stat-label">Total Records</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-session">–</div><div class="stat-label">Session</div></div>
+  </div>
+
+  <!-- Live scan feed -->
+  <div class="card">
+    <div class="card-header">
+      <h2>📶 Live BLE Scan Feed</h2>
+      <div>
+        <span class="ws-dot" id="ws-dot"></span><span id="ws-label" style="font-size:.78rem;color:var(--muted)">Disconnected</span>
+        &nbsp;
+        <button class="btn btn-ghost btn-sm" onclick="clearFeed()">Clear</button>
+      </div>
+    </div>
+    <div id="scan-feed"><div class="entry" style="color:#a0aec0">Waiting for BLE events…</div></div>
+  </div>
+
+  <!-- Session attendance (current session) -->
+  <div class="card">
+    <div class="card-header">
+      <h2>✅ Current Session Attendance</h2>
+      <button class="btn btn-blue btn-sm" onclick="loadSessionAttendance()">↻ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Device / MAC</th><th>Time</th></tr></thead>
+        <tbody id="sess-att-body"><tr><td colspan="4" class="empty-state">No attendance yet</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /dashboard -->
+
+<!-- =========================================================================
+     ATTENDANCE (all records)
+     ===================================================================== -->
+<div id="sec-attendance" class="section">
+  <div class="card">
+    <div class="card-header">
+      <h2>📋 All Attendance Records</h2>
+      <button class="btn btn-blue btn-sm" onclick="loadAttendance()">↻ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Device ID</th><th>Session</th><th>Time</th></tr></thead>
+        <tbody id="attendance-body"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     STUDENTS
+     ===================================================================== -->
+<div id="sec-students" class="section">
+
+  <!-- Register form -->
+  <div class="card">
+    <h2 style="margin-bottom:.8rem">➕ Register Student</h2>
+    <div class="form-row">
+      <div style="flex:2;min-width:160px">
+        <label>Full Name *</label>
+        <input id="reg-name" type="text" placeholder="e.g. John Doe" />
+      </div>
+      <div style="flex:2;min-width:160px">
+        <label>BLE MAC Address</label>
+        <input id="reg-mac" type="text" placeholder="AA:BB:CC:DD:EE:FF" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div style="flex:1;min-width:120px">
+        <label>Beacon ID (minor)</label>
+        <input id="reg-beacon" type="text" placeholder="e.g. 0042" />
+      </div>
+      <div style="flex:1;min-width:120px">
+        <label>Roll Number</label>
+        <input id="reg-roll" type="text" placeholder="e.g. CS2021001" />
+      </div>
+    </div>
+    <button class="btn btn-green" onclick="registerStudent()">Register</button>
+    <span id="reg-msg" style="font-size:.8rem;margin-left:.5rem"></span>
+  </div>
+
+  <!-- Student list -->
+  <div class="card">
+    <div class="card-header">
+      <h2>👥 Registered Students</h2>
+      <button class="btn btn-ghost btn-sm" onclick="loadStudents()">↻ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>MAC</th><th>Beacon ID</th><th>Roll No.</th><th></th></tr></thead>
+        <tbody id="students-body"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /students -->
+
+<!-- =========================================================================
+     SESSION
+     ===================================================================== -->
+<div id="sec-session" class="section">
+  <div class="card">
+    <h2 style="margin-bottom:.9rem">⏱ Session Control</h2>
+    <div class="form-row" style="align-items:flex-end">
+      <div style="flex:2;min-width:160px">
+        <label>Class Name (optional)</label>
+        <input id="session-class" type="text" placeholder="e.g. CS101 – Data Structures" />
+      </div>
+    </div>
+    <button id="btn-start" class="btn btn-green" onclick="startSession()">▶ Start Session</button>
+    <button id="btn-stop"  class="btn btn-red"   onclick="stopSession()"  disabled>■ Stop Session</button>
+  </div>
+  <div class="card">
+    <h2 style="margin-bottom:.8rem">Current Status</h2>
+    <pre id="session-info" style="font-size:.85rem;line-height:1.7;white-space:pre-wrap"></pre>
+  </div>
+</div>
+
+<!-- =========================================================================
+     SCAN LOGS
+     ===================================================================== -->
+<div id="sec-scanlogs" class="section">
+  <div class="card">
+    <div class="card-header">
+      <h2>🔍 Raw Scan Logs</h2>
+      <button class="btn btn-blue btn-sm" onclick="loadScanLogs()">↻ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>MAC</th><th>Name</th><th>Beacon ID</th><th>RSSI</th><th>Time</th></tr></thead>
+        <tbody id="scanlogs-body"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</main><!-- /main -->
+
+<!-- Toast notification -->
+<div id="toast"></div>
+
+<!-- Status bar -->
+<div id="status-bar">
+  <span>Last update: <span id="last-update">–</span></span>
+  <span>IP: <span id="device-ip">–</span></span>
+</div>
+
+<!-- =========================================================================
+     JavaScript
+     ===================================================================== -->
+<script>
+// =============================================================================
+// Configuration
+// NOTE: Change AUTH_TOKEN to match the firmware AUTH_TOKEN in config.h.
+// In production, prompt the user rather than hard-coding this here.
+// =============================================================================
+const BASE_URL   = "";   // empty = same origin (served from ESP32)
+const AUTH_TOKEN = "esp32-attend-secret";
+
+// =============================================================================
+// API helpers
+// =============================================================================
+const H = {
+  "Content-Type":  "application/json",
+  "Authorization": `Bearer ${AUTH_TOKEN}`
+};
+
+async function apiFetch(path, opts = {}) {
+  try {
+    const res = await fetch(BASE_URL + path, {
+      ...opts,
+      headers: { ...H, ...(opts.headers || {}) }
+    });
+    return await res.json();
+  } catch (e) {
+    console.error("[API]", e);
+    return null;
+  }
+}
+
+// =============================================================================
+// WebSocket live feed
+// =============================================================================
+let ws = null;
+const MAX_FEED_LINES = 100;
+
+function connectWS() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const url   = `${proto}//${location.host}/ws`;
+  ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    setWsStatus(true);
+    addFeedEntry("🟢 WebSocket connected", "");
+  };
+
+  ws.onclose = () => {
+    setWsStatus(false);
+    addFeedEntry("🔴 WebSocket disconnected – reconnecting…", "");
+    setTimeout(connectWS, 3000);
+  };
+
+  ws.onerror = () => { ws.close(); };
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      handleWsMessage(msg);
+    } catch (_) {}
+  };
+}
+
+function setWsStatus(connected) {
+  document.getElementById("ws-dot").className   = "ws-dot" + (connected ? " connected" : "");
+  document.getElementById("ws-label").textContent = connected ? "Connected" : "Disconnected";
+}
+
+function handleWsMessage(msg) {
+  const { event, data } = msg;
+  if (!event || !data) return;
+
+  if (event === "scan") {
+    const hasBeacon = data.beacon_id && data.beacon_id.length > 0;
+    const cls       = hasBeacon ? "entry beacon" : "entry";
+    const label     = hasBeacon ? `Beacon:${data.beacon_id}` : data.mac;
+    addFeedEntry(
+      `📶 ${label}  ${data.name || ""}  RSSI:${data.rssi} dBm`,
+      cls
+    );
+    updateTimestamp();
+  }
+
+  if (event === "attendance") {
+    addFeedEntry(
+      `✅ MARKED: ${esc(data.name)}  (${data.mac})  RSSI:${data.rssi}`,
+      "entry marked"
+    );
+    // Refresh session attendance tab if on dashboard
+    if (document.getElementById("sec-dashboard").classList.contains("visible")) {
+      loadSessionAttendance();
+      loadStats();
+    }
+  }
+
+  if (event === "session") {
+    renderSession(data);
+    loadStats();
+  }
+}
+
+function addFeedEntry(text, cls) {
+  const feed = document.getElementById("scan-feed");
+  // Remove initial placeholder
+  const placeholder = feed.querySelector('[style*="color:#a0aec0"]');
+  if (placeholder) placeholder.remove();
+
+  const div = document.createElement("div");
+  div.className = cls || "entry";
+  div.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+  feed.appendChild(div);
+
+  // Trim to MAX_FEED_LINES
+  while (feed.children.length > MAX_FEED_LINES) feed.removeChild(feed.firstChild);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function clearFeed() {
+  document.getElementById("scan-feed").innerHTML =
+    '<div class="entry" style="color:#a0aec0">Feed cleared.</div>';
+}
+
+// =============================================================================
+// Navigation
+// =============================================================================
+function showSection(name, btn) {
+  document.querySelectorAll(".section").forEach(s => s.classList.remove("visible"));
+  document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+  document.getElementById("sec-" + name).classList.add("visible");
+  if (btn) btn.classList.add("active");
+
+  if (name === "dashboard")  { loadStats(); loadSessionAttendance(); }
+  if (name === "attendance") loadAttendance();
+  if (name === "students")   loadStudents();
+  if (name === "session")    loadSession();
+  if (name === "scanlogs")   loadScanLogs();
+}
+
+// =============================================================================
+// Stats
+// =============================================================================
+async function loadStats() {
+  const s = await apiFetch("/api/stats");
+  if (!s) return;
+  document.getElementById("stat-students").textContent  = s.total_students  ?? "–";
+  document.getElementById("stat-present").textContent   = s.session_count   ?? "–";
+  document.getElementById("stat-total-att").textContent = s.total_attendance ?? "–";
+  document.getElementById("stat-session").textContent   = s.session_active ? "Active" : "Inactive";
+}
+
+// =============================================================================
+// Attendance
+// =============================================================================
+async function loadAttendance() {
+  const data = await apiFetch("/api/attendance");
+  const tbody = document.getElementById("attendance-body");
+  if (!data || !data.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No attendance records.</td></tr>`;
+    updateTimestamp(); return;
+  }
+  tbody.innerHTML = data.map((r, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${esc(r.name)}</td>
+      <td><code>${esc(r.device_id)}</code></td>
+      <td><span class="pill pill-blue">${esc(r.session_id)}</span></td>
+      <td>${fmtTime(r.timestamp)}</td>
+    </tr>`).join("");
+  updateTimestamp();
+}
+
+async function loadSessionAttendance() {
+  const data = await apiFetch("/api/attendance/session");
+  const tbody = document.getElementById("sess-att-body");
+  if (!data || !data.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No attendance for current session.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.map((r, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><strong>${esc(r.name)}</strong></td>
+      <td><code>${esc(r.device_id)}</code></td>
+      <td>${fmtTime(r.timestamp)}</td>
+    </tr>`).join("");
+}
+
+// =============================================================================
+// Students
+// =============================================================================
+async function loadStudents() {
+  const data = await apiFetch("/api/students");
+  const tbody = document.getElementById("students-body");
+  if (!data || !data.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No students registered.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.map(s => `
+    <tr>
+      <td>${s.id + 1}</td>
+      <td><strong>${esc(s.name)}</strong></td>
+      <td><code>${esc(s.device_id || "–")}</code></td>
+      <td>${s.beacon_id ? `<span class="pill pill-amber">${esc(s.beacon_id)}</span>` : "–"}</td>
+      <td>${esc(s.roll_number || "–")}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="deleteStudent(${s.id})">✕ Remove</button>
+      </td>
+    </tr>`).join("");
+}
+
+async function registerStudent() {
+  const name     = document.getElementById("reg-name").value.trim();
+  const mac      = document.getElementById("reg-mac").value.trim().toUpperCase();
+  const beacon   = document.getElementById("reg-beacon").value.trim();
+  const roll     = document.getElementById("reg-roll").value.trim();
+  const msg      = document.getElementById("reg-msg");
+
+  if (!name)              { msg.style.color="red"; msg.textContent="⚠ Name is required"; return; }
+  if (!mac && !beacon)    { msg.style.color="red"; msg.textContent="⚠ Provide MAC or Beacon ID"; return; }
+
+  const res = await apiFetch("/api/students", {
+    method: "POST",
+    body: JSON.stringify({ name, device_id: mac, beacon_id: beacon, roll_number: roll })
+  });
+
+  if (res && res.ok) {
+    msg.style.color = "green"; msg.textContent = "✔ Registered!";
+    document.getElementById("reg-name").value = "";
+    document.getElementById("reg-mac").value  = "";
+    document.getElementById("reg-beacon").value = "";
+    document.getElementById("reg-roll").value = "";
+    loadStudents();
+  } else {
+    msg.style.color = "red";
+    msg.textContent = "✘ " + (res && res.error ? res.error : "Failed");
+  }
+}
+
+async function deleteStudent(idx) {
+  if (!confirm("Remove this student?")) return;
+  const res = await apiFetch(`/api/students/${idx}`, { method: "DELETE" });
+  if (res && res.ok) { showToast("Student removed"); loadStudents(); }
+  else showToast("Failed to remove", true);
+}
+
+// =============================================================================
+// Session
+// =============================================================================
+async function loadSession() {
+  const s = await apiFetch("/api/session");
+  if (s) renderSession(s);
+}
+
+function renderSession(s) {
+  const badge    = document.getElementById("session-badge");
+  const info     = document.getElementById("session-info");
+  const btnStart = document.getElementById("btn-start");
+  const btnStop  = document.getElementById("btn-stop");
+
+  if (!badge) return;
+
+  badge.textContent = s.active
+    ? `Session: ${s.class_name || "Active"}`
+    : "Session: Inactive";
+  badge.className = s.active ? "active" : "";
+
+  if (btnStart) btnStart.disabled = !!s.active;
+  if (btnStop)  btnStop.disabled  = !s.active;
+
+  if (info) {
+    const rows = [
+      ["Status",     s.active ? "🟢 ACTIVE" : "🔴 Inactive"],
+      ["Session ID", s.session_id || "–"],
+      ["Class",      s.class_name  || "–"],
+      ["Started",    s.start ? fmtTime(s.start) : "–"],
+      ["Ended",      s.end   ? fmtTime(s.end)   : "–"],
+      ["Present",    s.count ?? "–"],
+    ];
+    info.textContent = rows.map(r => r[0].padEnd(14) + r[1]).join("\n");
+  }
+}
+
+async function startSession() {
+  const className = document.getElementById("session-class").value.trim();
+  const res = await apiFetch("/api/session/start", {
+    method: "POST",
+    body: JSON.stringify({ class_name: className })
+  });
+  if (res) { renderSession(res); loadStats(); showToast("Session started"); }
+}
+
+async function stopSession() {
+  const res = await apiFetch("/api/session/stop", { method: "POST" });
+  if (res) { renderSession(res); loadStats(); showToast("Session stopped"); }
+}
+
+// =============================================================================
+// Scan logs
+// =============================================================================
+async function loadScanLogs() {
+  const data = await apiFetch("/api/scan-logs");
+  const tbody = document.getElementById("scanlogs-body");
+  if (!data || !data.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No scan logs.</td></tr>`;
+    return;
+  }
+  // Show newest first
+  tbody.innerHTML = data.slice().reverse().map((r, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><code>${esc(r.mac || r.d)}</code></td>
+      <td>${esc(r.name || r.n || "–")}</td>
+      <td>${r.beacon_id || r.b
+            ? `<span class="pill pill-amber">${esc(r.beacon_id || r.b)}</span>`
+            : "–"}</td>
+      <td><span class="pill ${rssiPill(r.rssi || r.r)}">${r.rssi || r.r} dBm</span></td>
+      <td>${fmtTime(r.timestamp || r.t)}</td>
+    </tr>`).join("");
+}
+
+// =============================================================================
+// Utilities
+// =============================================================================
+function esc(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function fmtTime(ts) {
+  if (!ts) return "–";
+  // ts is Unix epoch seconds
+  const d = new Date(ts * 1000);
+  return d.toLocaleString();
+}
+
+function rssiPill(rssi) {
+  if (rssi >= -60) return "pill-green";
+  if (rssi >= -75) return "pill-amber";
+  return "pill-red";
+}
+
+function updateTimestamp() {
+  const el = document.getElementById("last-update");
+  if (el) el.textContent = new Date().toLocaleTimeString();
+}
+
+let toastTimer = null;
+function showToast(msg, isError = false) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.background = isError ? "#e53e3e" : "#2d3748";
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2500);
+}
+
+// =============================================================================
+// Boot
+// =============================================================================
+(async function boot() {
+  // Detect IP from location
+  document.getElementById("device-ip").textContent = location.hostname;
+
+  // Load initial data
+  await loadStats();
+  await loadSessionAttendance();
+  loadSession();
+
+  // Connect WebSocket
+  connectWS();
+
+  // Auto-refresh stats every 15 s
+  setInterval(() => {
+    loadStats();
+    const active = document.querySelector(".section.visible");
+    if (active) {
+      const id = active.id;
+      if (id === "sec-dashboard") loadSessionAttendance();
+    }
+  }, 15000);
+})();
+</script>
+</body>
+</html>
