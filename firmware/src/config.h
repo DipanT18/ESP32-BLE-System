@@ -15,14 +15,14 @@
 // ---------------------------------------------------------------------------
 // WiFi – Station mode (connect to existing router)
 // ---------------------------------------------------------------------------
-#define WIFI_SSID       "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD   "YOUR_WIFI_PASSWORD"
+#define WIFI_SSID       "madhav@vianet"
+#define WIFI_PASSWORD   "success$111$"
 
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 // WiFi – Access Point fallback (created when STA fails)
 // ---------------------------------------------------------------------------
-#define AP_SSID         "ESP32-BLE-Attend"
-#define AP_PASSWORD     "attend123"          // min 8 chars; "" = open network
+#define AP_SSID         "BLE_ATTENDANCE"
+#define AP_PASSWORD     "12345678"          // min 8 chars; "" = open network
 
 // ---------------------------------------------------------------------------
 // Web server
