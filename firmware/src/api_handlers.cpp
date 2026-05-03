@@ -132,8 +132,12 @@ static void handleRegisterStudent(AsyncWebServerRequest* req) {
 
     String body = getBody(req);
     StaticJsonDocument<384> doc;
-    if (deserializeJson(doc, body) != DeserializationError::Ok) {
-        replyError(req, 400, "Invalid JSON"); return;
+    DeserializationError jsonErr = deserializeJson(doc, body);
+    if (jsonErr) {
+        String errMsg = "Invalid JSON: ";
+        errMsg += jsonErr.c_str();
+        replyError(req, 400, errMsg.c_str());
+        return;
     }
 
     const char* name       = doc["name"];
@@ -227,8 +231,12 @@ static void handleImportStudents(AsyncWebServerRequest* req) {
 
     String body = getBody(req);
     DynamicJsonDocument doc(16384);
-    if (deserializeJson(doc, body) != DeserializationError::Ok) {
-        replyError(req, 400, "Invalid JSON"); return;
+    DeserializationError jsonErr = deserializeJson(doc, body);
+    if (jsonErr) {
+        String errMsg = "Invalid JSON: ";
+        errMsg += jsonErr.c_str();
+        replyError(req, 400, errMsg.c_str());
+        return;
     }
 
     if (!doc.is<JsonArray>()) {
@@ -257,7 +265,10 @@ static void handleImportStudents(AsyncWebServerRequest* req) {
 // ---------------------------------------------------------------------------
 
 void registerRoutes(AsyncWebServer& server) {
-    server.onRequestBody(onBody);
+    // NOTE: server.onRequestBody() sets the body handler on the internal
+    // catch-all handler whose canHandle() returns false when _onRequest is
+    // null, so it never fires in ESPAsyncWebServer 1.2.x.  We therefore pass
+    // onBody as the fourth argument directly to each POST route that needs it.
 
     // CORS
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin",  "*");
@@ -270,13 +281,13 @@ void registerRoutes(AsyncWebServer& server) {
 
     // Session
     server.on("/api/session",       HTTP_GET,  handleGetSession);
-    server.on("/api/session/start", HTTP_POST, handleStartSession);
-    server.on("/api/session/stop",  HTTP_POST, handleStopSession);
+    server.on("/api/session/start", HTTP_POST, handleStartSession, onBody);
+    server.on("/api/session/stop",  HTTP_POST, handleStopSession,  onBody);
 
     // Students
     server.on("/api/students",        HTTP_GET,    handleGetStudents);
-    server.on("/api/students",        HTTP_POST,   handleRegisterStudent);
-    server.on("/api/students/import", HTTP_POST,   handleImportStudents);
+    server.on("/api/students",        HTTP_POST,   handleRegisterStudent, onBody);
+    server.on("/api/students/import", HTTP_POST,   handleImportStudents,  onBody);
     server.on("^/api/students/([0-9]+)$", HTTP_DELETE,
               [](AsyncWebServerRequest* req) {
                   if (!checkAuth(req)) { replyError(req, 401, "Unauthorized"); return; }
