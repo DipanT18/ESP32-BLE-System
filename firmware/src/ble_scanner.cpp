@@ -73,6 +73,35 @@ public:
 
 static ScanCallbacks s_scanCallbacks;
 
+static void configureScan(NimBLEScan* scan) {
+    scan->setAdvertisedDeviceCallbacks(&s_scanCallbacks, /*duplicates=*/true);
+    scan->setActiveScan(true);
+
+    uint16_t interval = BLE_SCAN_INTERVAL;
+    uint16_t window   = BLE_SCAN_WINDOW;
+    if (window > interval) window = interval;
+
+    scan->setInterval(interval);
+    scan->setWindow(window);
+    scan->setFilterPolicy(BLE_HCI_SCAN_FILT_NO_WL);
+    scan->setDuplicateFilter(false);
+    scan->setMaxResults(0);
+}
+
+static void onScanComplete(NimBLEScanResults results) {
+    if (!s_scanning) return;
+    (void)results;
+
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    scan->clearResults();
+
+    bool ok = scan->start(BLE_SCAN_DURATION_S, onScanComplete, /*restart=*/false);
+    if (!ok) {
+        s_scanning = false;
+        Serial.println("[BLE] Scan restart FAILED");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -88,27 +117,29 @@ void begin(EventCallback callback) {
 
 void startScan() {
     NimBLEScan* scan = NimBLEDevice::getScan();
-    scan->setAdvertisedDeviceCallbacks(&s_scanCallbacks, /*duplicates=*/true);
-    scan->setActiveScan(true);
-    scan->setInterval(BLE_SCAN_INTERVAL);
-    scan->setWindow(BLE_SCAN_WINDOW);
-    scan->setFilterPolicy(BLE_HCI_SCAN_FILT_NO_WL);
+    configureScan(scan);
+    scan->clearResults();
 
-    // Start scan asynchronously (non-blocking); restart is handled in loop()
-    bool ok = scan->start(BLE_SCAN_DURATION_S, nullptr, /*restart=*/true);
+    bool ok = false;
+    if (BLE_SCAN_DURATION_S == 0) {
+        ok = scan->start(0, nullptr, /*restart=*/false);
+    } else {
+        ok = scan->start(BLE_SCAN_DURATION_S, onScanComplete, /*restart=*/false);
+    }
+
     s_scanning = ok;
     Serial.printf("[BLE] Scan %s (duration %d s)\n",
                   ok ? "started" : "FAILED", BLE_SCAN_DURATION_S);
 }
 
 void stopScan() {
-    NimBLEDevice::getScan()->stop();
     s_scanning = false;
+    NimBLEDevice::getScan()->stop();
     Serial.println("[BLE] Scan stopped");
 }
 
 bool isScanning() {
-    return s_scanning;
+    return NimBLEDevice::getScan()->isScanning();
 }
 
 } // namespace BLEScanner
