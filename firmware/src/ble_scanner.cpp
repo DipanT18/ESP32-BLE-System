@@ -18,7 +18,6 @@ static EventCallback  s_callback;
 static Dedup::Deduplicator s_dedupInstance(DEDUP_WINDOW_S);
 static Dedup::Deduplicator* s_dedup = &s_dedupInstance;
 static bool           s_scanning = false;
-static bool           s_stopRequested = false;
 
 // ---------------------------------------------------------------------------
 // NimBLE advertised-device callback
@@ -94,7 +93,7 @@ static void onScanComplete(const NimBLEScanResults& results) {
     NimBLEScan* scan = NimBLEDevice::getScan();
     scan->clearResults();
 
-    if (!s_scanning || s_stopRequested) return;
+    if (!s_scanning) return;
 
     bool ok = scan->start(BLE_SCAN_DURATION_S, onScanComplete, /*restart=*/false);
     if (!ok) {
@@ -122,7 +121,6 @@ void startScan() {
     scan->clearResults();
 
     bool ok = false;
-    s_stopRequested = false;
     if (BLE_SCAN_DURATION_S == 0) {
         ok = scan->start(0, nullptr, /*restart=*/false);
     } else {
@@ -135,15 +133,14 @@ void startScan() {
 }
 
 void stopScan() {
-    s_stopRequested = true;
+    s_scanning = false;
     NimBLEDevice::getScan()->stop();
     NimBLEDevice::getScan()->clearResults();
-    s_scanning = false;
     Serial.println("[BLE] Scan stopped");
 }
 
 bool isScanning() {
-    return s_scanning && !s_stopRequested;
+    return s_scanning && NimBLEDevice::getScan()->isScanning();
 }
 
 } // namespace BLEScanner
