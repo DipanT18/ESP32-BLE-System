@@ -117,8 +117,8 @@ int findStudentByBeacon(const String& beaconId) {
 
 bool registerStudent(const String& deviceId, const String& name,
                      const String& beaconId, const String& rollNumber) {
-    // Duplicate check – same MAC
-    if (findStudentByDevice(deviceId) >= 0) return false;
+    // Duplicate check – same MAC (skip if empty, e.g. beacon-only registration)
+    if (deviceId.length() > 0 && findStudentByDevice(deviceId) >= 0) return false;
     // Duplicate check – same beacon ID
     if (beaconId.length() > 0 && findStudentByBeacon(beaconId) >= 0) return false;
     if (studentCount >= MAX_STUDENTS) return false;
