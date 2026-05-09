@@ -15,13 +15,13 @@
 // ---------------------------------------------------------------------------
 // WiFi – Station mode (connect to existing router)
 // ---------------------------------------------------------------------------
-#define WIFI_SSID       "madhav@vianet"
-#define WIFI_PASSWORD   "success$111$"
+#define WIFI_SSID       "YourWiFiSSID" // hi learner, dont forget to change this!
+#define WIFI_PASSWORD   "YourWiFiPassword", // this too.
 
 // --------------------------------------------------------------------------
 // WiFi – Access Point fallback (created when STA fails)
 // ---------------------------------------------------------------------------
-#define AP_SSID         "BLE_ATTENDANCE"
+#define AP_SSID         "ESP32-Attendance"     // SSID of fallback AP
 #define AP_PASSWORD     "12345678"          // min 8 chars; "" = open network
 
 // ---------------------------------------------------------------------------
